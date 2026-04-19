@@ -53,7 +53,7 @@ def get_ext_modules_and_cmdclass():
         "csrc/bindings.cpp",
     ]
 
-    include_dirs = [EOLE_CSRC]
+    include_dirs = [EOLE_CSRC, '/usr/include/torch/csrc/api/include']
 
     cxx_args = ["-O3", "-std=c++17"]
     nvcc_args = [

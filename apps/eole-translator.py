@@ -4,6 +4,8 @@ import re
 import concurrent.futures
 from urllib.parse import urlparse, urlunparse
 import string
+import unicodedata
+import math
 
 # Languages
 languages = [
@@ -24,6 +26,12 @@ def extract_chunks(text):
     return [s for s in sentences if s], breaks
 
 
+def rmSpacesBeforePunct(text):
+    noats = re.sub(r'@@( |$)', '', text) # rm @@
+    nospacebeforepunct = re.sub(r" +([:,;!?.’“])", r'\1', noats) # rm spaces before punctuation
+    nospacebeforeparens = re.sub(r'([({\[’]) +', r'\1', nospacebeforepunct)  # rm multiple spaces after opening parens/brackets
+    return re.sub(r' +([)}\]])', r'\1', nospacebeforeparens) # rm multiple spaces before opening parens/brackets
+
 def rebuild_text(translated_sentences, breaks):
     result = []
     s_idx = b_idx = 0
@@ -34,16 +42,18 @@ def rebuild_text(translated_sentences, breaks):
         if b_idx < len(breaks):
             result.append(breaks[b_idx])
             b_idx += 1
-    return "".join(result)
+    return rmSpacesBeforePunct("".join(result))
 
 
-def get_base_url(api_url):
+def get_parent_url(api_url):
     parsed = urlparse(api_url)
-    return urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+    path_parts = parsed.path.rstrip('/').split('/')  # Split path and remove last segment
+    parent_path = '/'.join(path_parts[:-1]) + '/'
+    return urlunparse((parsed.scheme, parsed.netloc, parent_path, '', '', ''))
 
 
 def get_models(api_url):
-    base_url = get_base_url(api_url)
+    base_url = get_parent_url(api_url)
     try:
         response = requests.get(f"{base_url}/models")
         data = response.json()
@@ -54,15 +64,23 @@ def get_models(api_url):
 
 
 def update_models(api_url):
-    #models = get_models(api_url)
+    models = get_models(api_url)
     return {"choices": models, "value": models[0]}
 
 
+def to_ascii(text):  # ASCIIfy (convert Æ,æ,Œ,œ,á,é,í,ó,ú, etc. to ASCII):
+    extras = { 'Æ': 'Ae', 'æ': 'ae', 'Œ': 'Oe', 'œ': 'oe',
+               'Ǣ': 'Ae', 'ǣ': 'ae',
+               'Ǽ': 'Ae', 'ǽ': 'ae', 'ǽ': 'ae' }
+    text = ''.join(extras.get(c, c) for c in text)
+    normalized = unicodedata.normalize('NFKD', text)
+    return normalized.encode('ascii', 'ignore').decode('ascii')
+
 def translate_text(api_url, model_id, source_lang, target_lang, source_text):
+    source_text = to_ascii(source_text)
     # this is due to how my pre-tokenized 🇻🇦 source text was formatted:
     source_text = re.sub(f'([{re.escape(string.punctuation)}])', r' \1 ', source_text)   # add space before and after punctuation
     source_text = re.sub(r'\s+', ' ', source_text).strip()   # normalize whitespace
-    print(source_text)
 
     paragraphs, breaks = extract_chunks(source_text)
     translated_sentences = []
@@ -72,7 +90,7 @@ def translate_text(api_url, model_id, source_lang, target_lang, source_text):
         payloads.append(
             {
                 "model": model_id,
-                "messages": [{"role": "system", "content": ""}, {"role": "user", "content": para}],
+                "messages": [{"role": "user", "content": para}],
             }
         )
 
@@ -92,12 +110,14 @@ def translate_text(api_url, model_id, source_lang, target_lang, source_text):
             translated_sentences.append(data["choices"][0]["message"]["content"])
         else:
             predictions = data.get("predictions", [])
+            scores = data.get("scores", [])
             if predictions and predictions[0]:
                 translated_sentences.append(predictions[0][0])
+                score = scores[0][0] if scores else 0
             else:
                 translated_sentences.append("Error: No translation returned by the server.")
 
-    return rebuild_text(translated_sentences, breaks)
+    return rebuild_text(translated_sentences, breaks), score, math.exp(score)*100
 
 
 custom_css = """
@@ -157,18 +177,18 @@ button:hover {
 """
 # Gradio Interface
 with gr.Blocks(title='Eole Latin 🇻🇦 → Engish 🇬🇧 Translator') as iface:
-    gr.Markdown('# [Eole](https://eole-nlp.github.io/eole) Latin 🇻🇦 → Engish 🇬🇧 Translator')
-    gr.Markdown("[AquinasLatinEnglish model](https://huggingface.co/Geremia23/AquinasLatinEnglishModel) trained on the [AquinasLatinEnglish parallel corpus](https://huggingface.co/datasets/Geremia23/AquinasLatinEnglish) using [Transformers and Byte-Pair Encoding (BPE)](https://isidore.co/forum/index.php/topic,377.msg1327.html#msg1327).")
+    gr.Markdown('<h1 style="text-align: center; font-family: Arial;"><a href="https://eole-nlp.github.io/eole" target="_blank">Eole</a> Latin 🇻🇦 → English 🇬🇧 Translator</h1>')
+    gr.Markdown('<a href="https://huggingface.co/Geremia23/AquinasLatinEnglishModel" target="_blank">AquinasLatinEnglish model</a> trained on the <a href="https://huggingface.co/datasets/Geremia23/AquinasLatinEnglish" target="_blank">AquinasLatinEnglish parallel corpus</a> using <a href="https://isidore.co/forum/index.php/topic,377.msg1327.html#msg1327" target="_blank">Transformers and Byte-Pair Encoding (BPE)</a>.')
 
     with gr.Row(equal_height=True):
         # Left Column: Source language + text
         with gr.Column(scale=4):
-            source_lang = gr.Dropdown(languages[0:1], label="Source Language", value="Latin")
-            source_text = gr.Textbox(placeholder="Enter text here…", lines=15, label="Source Text")
+            source_lang = gr.Dropdown(languages[0:1], label="Source Language", value="Latin", interactive=False)
+            source_text = gr.Textbox(placeholder="Enter text here…", lines=15, label="Source Text (1024 tokens max)", autofocus=True)
 
         # Right Column: Target language + translated text
         with gr.Column(scale=4):
-            target_lang = gr.Dropdown(languages[1:], label="Target Language", value="English")
+            target_lang = gr.Dropdown(languages[1:], label="Target Language", value="English", interactive=False)
             translated_text = gr.Textbox(
                 placeholder="Translation will appear here…", lines=15, label="Translated Text", interactive=False
             )
@@ -177,11 +197,13 @@ with gr.Blocks(title='Eole Latin 🇻🇦 → Engish 🇬🇧 Translator') as if
         with gr.Column(scale=2, elem_id="settings-col") as settings_col:
             api_url = gr.Dropdown(
                 label="API URL",
-                choices=["http://127.0.0.1:5000/infer"],
-                value="http://127.0.0.1:5000/infer",
+                choices=["https://isidore.co/laen/infer"],
+                value="https://isidore.co/laen/infer",
                 interactive=False,
             )
-            model_id = gr.Dropdown(choices=get_models(api_url.value), label="Model", value='aquinas-latin-english')
+            model_id = gr.Dropdown(choices=get_models(api_url.value), label="Model", value='aquinas-latin-english', interactive=False)
+            score = gr.Textbox(label="Prediction Score: ln(prob. of best prediction)", value="", interactive=False)
+            prob_of_best = gr.Textbox(label="Prob. of Best Prediction (%)", value="", interactive=False)
 
     # Update models when API URL changes
     api_url.change(update_models, inputs=[api_url], outputs=[model_id])
@@ -191,7 +213,7 @@ with gr.Blocks(title='Eole Latin 🇻🇦 → Engish 🇬🇧 Translator') as if
     translate_button.click(
         translate_text,
         inputs=[api_url, model_id, source_lang, target_lang, source_text],
-        outputs=[translated_text],
+        outputs=[translated_text, score, prob_of_best],
     )
 
 iface.launch(css=custom_css)
