@@ -157,8 +157,8 @@ button:hover {
 """
 # Gradio Interface
 with gr.Blocks(title='Eole Latin 🇻🇦 → Engish 🇬🇧 Translator') as iface:
-    gr.Markdown('<h1 style="text-align: center; font-family: Arial;"><a href="https://eole-nlp.github.io/eole">Eole</a> Latin 🇻🇦 → Engish 🇬🇧 Translator</h1>')
-    gr.Markdown("<a href='https://huggingface.co/Geremia23/AquinasLatinEnglishModel'>AquinasLatinEnglish model</a> trained on the <a href='https://huggingface.co/datasets/Geremia23/AquinasLatinEnglish'>AquinasLatinEnglish parallel corpus</a> using <a href='https://isidore.co/forum/index.php/topic,377.msg1327.html#msg1327'>Transformers and Byte-Pair Encoding (BPE)</a>.")
+    gr.Markdown('# [Eole](https://eole-nlp.github.io/eole) Latin 🇻🇦 → Engish 🇬🇧 Translator')
+    gr.Markdown("[AquinasLatinEnglish model](https://huggingface.co/Geremia23/AquinasLatinEnglishModel) trained on the [AquinasLatinEnglish parallel corpus](https://huggingface.co/datasets/Geremia23/AquinasLatinEnglish) using [Transformers and Byte-Pair Encoding (BPE)](https://isidore.co/forum/index.php/topic,377.msg1327.html#msg1327).")
 
     with gr.Row(equal_height=True):
         # Left Column: Source language + text
@@ -194,4 +194,4 @@ with gr.Blocks(title='Eole Latin 🇻🇦 → Engish 🇬🇧 Translator') as if
         outputs=[translated_text],
     )
 
-iface.launch(share=True, css=custom_css)
+iface.launch(css=custom_css)
