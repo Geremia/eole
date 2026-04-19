@@ -3,44 +3,12 @@ import requests
 import re
 import concurrent.futures
 from urllib.parse import urlparse, urlunparse
+import string
 
 # Languages
 languages = [
-    "Bulgarian",
-    "Croatian",
-    "Czech",
-    "Danish",
-    "Dutch",
+    "Latin",
     "English",
-    "Estonian",
-    "Finnish",
-    "French",
-    "German",
-    "Greek",
-    "Hungarian",
-    "Irish",
-    "Italian",
-    "Latvian",
-    "Lithuanian",
-    "Maltese",
-    "Polish",
-    "Portuguese",
-    "Romanian",
-    "Slovak",
-    "Slovenian",
-    "Spanish",
-    "Swedish",
-    "Arabic",
-    "Catalan",
-    "Chinese",
-    "Galician",
-    "Hindi",
-    "Japanese",
-    "Korean",
-    "Norwegian",
-    "Russian",
-    "Turkish",
-    "Ukrainian",
 ]
 
 
@@ -86,21 +54,25 @@ def get_models(api_url):
 
 
 def update_models(api_url):
-    models = get_models(api_url)
+    #models = get_models(api_url)
     return {"choices": models, "value": models[0]}
 
 
-def translate_text(api_url, model_id, prompt_template, source_lang, target_lang, source_text):
+def translate_text(api_url, model_id, source_lang, target_lang, source_text):
+    # this is due to how my pre-tokenized 🇻🇦 source text was formatted:
+    source_text = re.sub(f'([{re.escape(string.punctuation)}])', r' \1 ', source_text)   # add space before and after punctuation
+    source_text = re.sub(r'\s+', ' ', source_text).strip()   # normalize whitespace
+    print(source_text)
+
     paragraphs, breaks = extract_chunks(source_text)
     translated_sentences = []
 
     payloads = []
     for para in paragraphs:
-        user_prompt = prompt_template.replace("{target_lang}", target_lang) + "\n\n" + para
         payloads.append(
             {
                 "model": model_id,
-                "messages": [{"role": "system", "content": ""}, {"role": "user", "content": user_prompt}],
+                "messages": [{"role": "system", "content": ""}, {"role": "user", "content": para}],
             }
         )
 
@@ -184,36 +156,32 @@ button:hover {
 }
 """
 # Gradio Interface
-with gr.Blocks(title="Eole Multilingual Translator", css=custom_css) as iface:
-    gr.Markdown("<h1 style='text-align: center; font-family: Arial;'>Eole Multilingual Translator</h1>")
+with gr.Blocks(title='Eole Latin 🇻🇦 → Engish 🇬🇧 Translator') as iface:
+    gr.Markdown('<h1 style="text-align: center; font-family: Arial;"><a href="https://eole-nlp.github.io/eole">Eole</a> Latin 🇻🇦 → Engish 🇬🇧 Translator</h1>')
+    gr.Markdown("<a href='https://huggingface.co/Geremia23/AquinasLatinEnglishModel'>AquinasLatinEnglish model</a> trained on the <a href='https://huggingface.co/datasets/Geremia23/AquinasLatinEnglish'>AquinasLatinEnglish parallel corpus</a> using <a href='https://isidore.co/forum/index.php/topic,377.msg1327.html#msg1327'>Transformers and Byte-Pair Encoding (BPE)</a>.")
 
     with gr.Row(equal_height=True):
         # Left Column: Source language + text
         with gr.Column(scale=4):
-            source_lang = gr.Dropdown(languages, label="Source Language", value="English")
-            source_text = gr.Textbox(placeholder="Enter text here...", lines=15, label="Source Text")
+            source_lang = gr.Dropdown(languages[0:1], label="Source Language", value="Latin")
+            source_text = gr.Textbox(placeholder="Enter text here…", lines=15, label="Source Text")
 
         # Right Column: Target language + translated text
         with gr.Column(scale=4):
-            target_lang = gr.Dropdown(languages, label="Target Language", value="French")
+            target_lang = gr.Dropdown(languages[1:], label="Target Language", value="English")
             translated_text = gr.Textbox(
-                placeholder="Translation will appear here...", lines=15, label="Translated Text", interactive=False
+                placeholder="Translation will appear here…", lines=15, label="Translated Text", interactive=False
             )
 
         # Settings Column (scrollable)
         with gr.Column(scale=2, elem_id="settings-col") as settings_col:
             api_url = gr.Dropdown(
                 label="API URL",
-                choices=["http://127.0.0.1:5000/infer", "http://127.0.0.1:5000/v1/chat/completions"],
+                choices=["http://127.0.0.1:5000/infer"],
                 value="http://127.0.0.1:5000/infer",
-                interactive=True,
+                interactive=False,
             )
-            model_id = gr.Dropdown(choices=get_models(api_url.value), label="Model", value=None)
-            prompt_template = gr.Textbox(
-                label="Prompt",
-                value="Translate the following text into {target_lang}, without additional explanation.",
-                lines=4,
-            )
+            model_id = gr.Dropdown(choices=get_models(api_url.value), label="Model", value='aquinas-latin-english')
 
     # Update models when API URL changes
     api_url.change(update_models, inputs=[api_url], outputs=[model_id])
@@ -222,8 +190,8 @@ with gr.Blocks(title="Eole Multilingual Translator", css=custom_css) as iface:
     translate_button = gr.Button("Translate", elem_id="button-container")
     translate_button.click(
         translate_text,
-        inputs=[api_url, model_id, prompt_template, source_lang, target_lang, source_text],
+        inputs=[api_url, model_id, source_lang, target_lang, source_text],
         outputs=[translated_text],
     )
 
-iface.launch(share=True)
+iface.launch(share=True, css=custom_css)
