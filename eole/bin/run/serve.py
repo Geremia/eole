@@ -1276,6 +1276,7 @@ def create_app(config_file):
         # (we could probably rely on pydantic model once properly implemented)
         non_settings_keys = ["inputs", "messages", "model"]
         settings = {k: v for k, v in request.model_dump().items() if k not in non_settings_keys}
+        _log_json_payload("INCOMING REQUEST [/infer] content", inputs[0]['content']) 
 
         await server.maybe_load_model(model_id)
         scores, preds = await server.models[model_id].infer_async(
@@ -1284,6 +1285,7 @@ def create_app(config_file):
             is_chat=isinstance(request, ChatRequest),
         )
         response = {"predictions": preds, "scores": scores}
+        _log_json_payload("MODEL RESPONSE [/infer] preds", preds[0][0])
         return response
 
     @app.post("/v1/chat/completions", response_model=OpenAIChatResponse)
